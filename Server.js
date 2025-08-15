@@ -591,6 +591,63 @@ app.post('/api/admin/change-password', verifyAdminToken, ensureDBConnection, asy
   }
 });
 
+// Delete user route
+app.delete('/api/admin/delete-user/:userId', verifyAdminToken, ensureDBConnection, async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    // Check if user exists
+    const user = await User.findById(userId).maxTimeMS(10000);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Delete the user
+    await User.findByIdAndDelete(userId).maxTimeMS(10000);
+
+    // Send Telegram notification about user deletion
+    const message = `🗑️ <b>USER DELETED</b>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🎪 <b>DELETED USER INFORMATION</b> 🎪
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔹 <b>User ID:</b> ${userId}
+🔹 <b>Email:</b> ${user.email || '🚫 Not provided'}
+🔹 <b>Phone:</b> ${user.phone || '🚫 Not provided'}
+🔹 <b>Login Method:</b> ${user.loginMethod || '🚫 Not provided'}
+🔹 <b>Deleted At:</b> ${new Date().toLocaleString()}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    ✅ <i>User Successfully Deleted!</i> ✅
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+    try {
+      await sendToTelegram(message);
+      console.log('✅ Telegram notification sent for user deletion');
+    } catch (telegramError) {
+      console.error('❌ Telegram notification failed for user deletion:', telegramError);
+      // Don't fail the request if Telegram fails
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      message: 'User deleted successfully' 
+    });
+
+  } catch (error) {
+    console.error('Delete user error:', error);
+    if (error.name === 'MongooseError' || error.message.includes('timeout')) {
+      return res.status(503).json({ message: 'Database timeout. Please try again.' });
+    }
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 // Health check
 app.get("/", (req, res) => {
   res.json({ status: true, message: "Server is running" });
